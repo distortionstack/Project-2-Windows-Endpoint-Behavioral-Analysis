@@ -7,7 +7,7 @@ from zipfile import ZipFile
 import numpy as np
 import pandas as pd
 import requests
-
+import os
 
 def safe_col(df, *names, default=np.nan):
     for n in names:
@@ -17,10 +17,39 @@ def safe_col(df, *names, default=np.nan):
 
 
 def load_dataset(source):
-    """Load from URL (zip), or local .json / .jsonl / .xml / .csv"""
+    """Load from URL(s) (zip), or local .json / .jsonl / .xml / .csv"""
+    Path("uploads").mkdir(exist_ok=True)
+    out_file = Path("uploads/uploads.json")
+    
+    if isinstance(source, list):
+        frames = []
+        for url in source:
+            if str(url).startswith("http"):
+                print(f"Downloading {url} ...")
+                zf = ZipFile(BytesIO(requests.get(url).content))
+                extracted_file = zf.extract(zf.namelist()[0])
+                df = pd.read_json(extracted_file, lines=True)
+                frames.append(df)
+                os.remove(extracted_file)
+            else:
+                p = Path(url)
+                if p.suffix in (".json", ".jsonl"):
+                    frames.append(pd.read_json(p, lines=True))
+        
+        combined = pd.concat(frames, ignore_index=True)
+        # Overwrite to uploads.json
+        combined.to_json(out_file, orient="records", lines=True)
+        return combined
+
     if str(source).startswith("http"):
         zf = ZipFile(BytesIO(requests.get(source).content))
-        source = zf.extract(zf.namelist()[0])
+        extracted = zf.extract(zf.namelist()[0])
+        df = pd.read_json(extracted, lines=True)
+        # Overwrite to uploads.json
+        df.to_json(out_file, orient="records", lines=True)
+        os.remove(extracted)
+        return df
+
     p = Path(source)
     if p.suffix in (".json", ".jsonl"):
         return pd.read_json(p, lines=True)

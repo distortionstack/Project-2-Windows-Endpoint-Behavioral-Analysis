@@ -13,7 +13,11 @@ from dashboard import build_dashboard
 
 warnings.filterwarnings("ignore")
 
-DATASET_URL = "https://github.com/OTRF/Security-Datasets/raw/refs/heads/master/datasets/atomic/windows/discovery/host/empire_shell_net_localgroup_administrators.zip"
+URLS = [
+    "https://raw.githubusercontent.com/OTRF/Security-Datasets/master/datasets/atomic/windows/credential_access/host/empire_mimikatz_extract_keys.zip",
+    "https://raw.githubusercontent.com/OTRF/Security-Datasets/master/datasets/atomic/windows/discovery/host/cmd_seatbelt_group_user.zip",
+    "https://raw.githubusercontent.com/OTRF/Security-Datasets/master/datasets/atomic/windows/defense_evasion/host/cmd_bitsadmin_download_psh_script.zip",
+]
 OUT_ALERTS  = "outputs\\alerts_full.json"
 OUT_AGG     = "outputs\\aggregated_windows.json"
 OUT_DASH    = "outputs\\dashboard.html"
@@ -22,7 +26,7 @@ Path("outputs").mkdir(parents=True, exist_ok=True)
 
 # ── Load ──────────────────────────────────────────────────────────
 print("[1/4] Loading & normalising...")
-df = normalize(load_dataset(DATASET_URL))
+df = normalize(load_dataset(URLS))
 
 # ── Detect ────────────────────────────────────────────────────────
 print("[2/4] Running detection rules...")
