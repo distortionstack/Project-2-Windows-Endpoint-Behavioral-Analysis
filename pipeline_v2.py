@@ -5,6 +5,7 @@ Mordor-compatible | Time-Window Behavioral Features | Isolation Forest | HTML Da
 
 from io import BytesIO
 import warnings
+import xml.etree.ElementTree as ET
 from zipfile import ZipFile
 import numpy as np
 import pandas as pd
@@ -18,19 +19,27 @@ import requests
 
 warnings.filterwarnings("ignore")
 
-#put the raw file download here so that it's included in the pipeline and not dependent on external files
-url = "https://github.com/OTRF/Security-Datasets/raw/refs/heads/master/datasets/atomic/windows/discovery/host/cmd_seatbelt_group_user.zip"
-
-zf = ZipFile(BytesIO(requests.get(url).content))
-df = pd.read_json(zf.extract(zf.namelist()[0]), lines=True)
-df.to_csv("uploads\\dataset.csv", index=False)
-
-DATASET_PATH = "uploads\\dataset.csv"
-OUT_ALERTS   = "outputs\\alerts_full.csv"
-OUT_AGG      = "outputs\\aggregated_windows.csv"
-OUT_DASH     = "outputs\\dashboard.html"
+DATASET_URL = "https://github.com/OTRF/Security-Datasets/raw/refs/heads/master/datasets/atomic/windows/discovery/host/cmd_seatbelt_group_user.zip"
+OUT_ALERTS = "outputs\\alerts_full.json"
+OUT_AGG    = "outputs\\aggregated_windows.json"
+OUT_DASH    = "outputs\\dashboard.html"
 
 Path("outputs").mkdir(parents=True, exist_ok=True)
+
+def load_dataset(source):
+    """Load dataset from URL (zip), or local .json/.jsonl/.xml/.csv"""
+    if str(source).startswith("http"):
+        zf = ZipFile(BytesIO(requests.get(source).content))
+        source = zf.extract(zf.namelist()[0])
+    p = Path(source)
+    if p.suffix in (".json", ".jsonl"):
+        return pd.read_json(p, lines=True)
+    elif p.suffix == ".xml":
+        tree = ET.parse(p)
+        rows = [{c.tag: c.text for c in event} for event in tree.getroot()]
+        return pd.DataFrame(rows)
+    else:  # .csv fallback
+        return pd.read_csv(p, low_memory=False)
 
 def safe_col(df, *names, default=np.nan):
     for n in names:
@@ -43,7 +52,7 @@ def safe_col(df, *names, default=np.nan):
 # ════════════════════════════════════════════════════════════════════
 print("[1/9] Loading & normalising...")
 
-df = pd.read_csv(DATASET_PATH, low_memory=False)
+df = load_dataset(DATASET_URL)
 
 df["@timestamp"]       = pd.to_datetime(df.get("@timestamp"), utc=True, errors="coerce")
 df                     = df.dropna(subset=["@timestamp"]).copy()
@@ -266,9 +275,9 @@ EXPORT_COLS = [
     "Hashes","Signed","SignatureStatus",
 ] + FLAG_COLS
 export_cols_avail = [c for c in EXPORT_COLS if c in threats.columns]
-threats[export_cols_avail].to_csv(OUT_ALERTS, index=False)
+threats[export_cols_avail].to_json(OUT_ALERTS, orient="records", indent=2)
 
-agg.to_csv(OUT_AGG, index=False)
+agg.to_json(OUT_AGG, orient="records", indent=2)
 
 # ════════════════════════════════════════════════════════════════════
 # STEP 9 — HTML DASHBOARD
