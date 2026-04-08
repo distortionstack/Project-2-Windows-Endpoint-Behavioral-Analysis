@@ -24,80 +24,57 @@ def safe_col(df, *names, default=np.nan):
 
 def get_smart_data(urls, force_update=False):
     """
-    Downloads datasets and extracts JSON if URLs change or force_update=True.
-    Reads from data/raw/current_dataset.json otherwise to skip download.
-    Returns: pandas DataFrame
+    ตรวจสอบ URL กับไฟล์ tracker ถ้าซ้ำให้โหลดจาก cache (current_dataset.json)
+    ถ้าไม่ซ้ำ ให้โหลดใหม่ แปลงเป็น JSON และเขียนทับของเดิมทันที
     """
     raw_dir = Path("data/raw")
-    out_dir = Path("outputs")
-    
-    # Ensure professional project structure exists
     raw_dir.mkdir(parents=True, exist_ok=True)
-    out_dir.mkdir(parents=True, exist_ok=True)
     
     state_file = raw_dir / "source_url.txt"
     data_file = raw_dir / "current_dataset.json"
     
-    # Handle single string gracefully
-    if isinstance(urls, str):
-        urls = [urls]
-        
-    urls_key = ",".join(urls)
+    # แปลง List ของ URLs เป็น String เพื่อใช้เปรียบเทียบ
+    urls_key = ",".join(urls) if isinstance(urls, list) else urls
     
-    # State Tracking: Read current stored URL
-    current_url_key = None
+    # 1. อ่าน URL เก่าจากไฟล์ source_url.txt
+    current_stored_url = None
     if state_file.exists():
-        try:
-            with open(state_file, "r", encoding="utf-8") as f:
-                current_url_key = f.read().strip()
-        except Exception as e:
-            print(f"[!] Warning: Could not read {state_file}: {e}")
+        current_stored_url = state_file.read_text(encoding="utf-8").strip()
             
-    # Conditional Download Logic
-    if (not force_update) and (current_url_key == urls_key) and data_file.exists():
-        print(f"[*] Data already up-to-date. Skipping download.")
+    # 2. เงื่อนไขการข้ามการโหลด: URL ตรงกัน และ มีไฟล์ข้อมูลอยู่แล้ว และ ไม่ได้สั่ง force_update
+
+    if (not force_update) and (current_stored_url == urls_key) and data_file.exists():
+        print(f"[*] URL matches source_url.txt. Loading from local cache...")
     else:
+        # 3. กรณี URL ไม่ซ้ำ หรือต้องการอัปเดต: เริ่มการโหลดใหม่
+        print(f"[!] URL mismatch or update required. Fetching new data...")
         frames = []
-        for url in urls:
-            print(f"[*] Downloading dataset from: {url}")
+        target_urls = urls if isinstance(urls, list) else [urls]
+        
+        for url in target_urls:
             try:
-                # Download the zip
                 response = requests.get(url, timeout=30)
                 response.raise_for_status()
                 
-                # Extract JSON from memory
                 with ZipFile(BytesIO(response.content)) as zf:
-                    extracted_name = zf.namelist()[0]
-                    with zf.open(extracted_name) as src:
-                        df_part = pd.read_json(src, lines=True)
-                        frames.append(df_part)
-                        
+                    # แตกไฟล์แรกที่เจอ (JSON) และโหลดเข้า DataFrame
+                    with zf.open(zf.namelist()[0]) as src:
+                        frames.append(pd.read_json(src, lines=True))
+                print(f"[*] Downloaded: {url.split('/')[-1]}")
             except Exception as e:
-                print(f"[!] Error during download/extraction of {url}: {e}")
+                print(f"[!] Error downloading {url}: {e}")
                 raise
-                
-        # Combine dataframes
-        print("[*] Combining datasets and saving to cache...")
+
+        # 4. รวมข้อมูลและเขียนทับไฟล์เดิม (Overwrite)
         combined_df = pd.concat(frames, ignore_index=True)
-        # Overwrite current_dataset.json
         combined_df.to_json(data_file, orient="records", lines=True)
             
-        # State Update: save the new completed URL string
-        with open(state_file, "w", encoding="utf-8") as f:
-            f.write(urls_key)
-                
-        print(f"[*] Successfully extracted and combined dataset to {data_file}")
-            
-    # Data Loading
-    try:
-        print(f"[*] Loading dataset into Pandas DataFrame...")
-        # read_json with lines=True as instructed
-        df = pd.read_json(data_file, lines=True)
-        return df
-    except Exception as e:
-        print(f"[!] Error reading JSON file into DataFrame: {e}")
-        raise
+        # 5. เขียนทับ URL ใหม่ลงใน source_url.txt
+        state_file.write_text(urls_key, encoding="utf-8")
+        print(f"[*] Cache updated and URL tracker overwritten.")
 
+    #โหลดข้อมูลจากไฟล์ที่เตรียมไว้ส่งคืนให้ Pipeline
+    return pd.read_json(data_file, lines=True)
 
 def normalize(df):
     """

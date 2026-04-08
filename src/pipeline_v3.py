@@ -4,6 +4,8 @@ Mordor-compatible | Time-Window Behavioral Features | Isolation Forest | HTML Da
 """
 
 import warnings
+import webbrowser 
+import os
 from pathlib import Path
 from detection import FLAG_COLS
 from loader    import get_smart_data, normalize
@@ -18,6 +20,8 @@ URLS = [
     "https://raw.githubusercontent.com/OTRF/Security-Datasets/master/datasets/atomic/windows/credential_access/host/empire_mimikatz_extract_keys.zip",
     "https://raw.githubusercontent.com/OTRF/Security-Datasets/master/datasets/atomic/windows/discovery/host/cmd_seatbelt_group_user.zip",
     "https://raw.githubusercontent.com/OTRF/Security-Datasets/master/datasets/atomic/windows/defense_evasion/host/cmd_bitsadmin_download_psh_script.zip",
+    "https://github.com/OTRF/Security-Datasets/raw/refs/heads/master/datasets/atomic/windows/credential_access/host/empire_mimikatz_sam_access.zip",
+    "https://github.com/OTRF/Security-Datasets/raw/refs/heads/master/datasets/atomic/windows/credential_access/host/cmd_sam_copy_esentutl.zip"
 ]
 
 OUT_ALERTS  = "outputs\\alerts_full.json"
@@ -48,8 +52,8 @@ EXPORT_COLS = [
 ] + FLAG_COLS
 export_avail = [c for c in EXPORT_COLS if c in threats.columns]
 
-# Export to CSV instead of JSON
-threats[export_avail].to_csv(OUT_ALERTS, index=False)
+# Export to JSON
+threats[export_avail].to_json(OUT_ALERTS, orient="records", indent=2)
 agg.to_json(OUT_AGG, orient="records", indent=2)
 
 # ── Dashboard ─────────────────────────────────────────────────────
@@ -77,3 +81,8 @@ print(f"|  alerts_full.json       -> {OUT_ALERTS[-28:]}  |")
 print(f"|  aggregated_windows.json-> {OUT_AGG[-28:]}  |")
 print(f"|  dashboard.html         -> {OUT_DASH[-28:]}  |")
 print("+------------------------------------------------------+")
+
+
+# Open the dashboard in the default web browser (Windows-specific)
+dashboard_file_path = os.path.abspath(OUT_DASH)
+webbrowser.open("file://" + dashboard_file_path)
