@@ -36,48 +36,39 @@ A comprehensive security monitoring system designed to detect threats and suspic
 
 ### Project Structure
 ```
-├── pipeline_v2.py           # Main analysis pipeline
-├── threat_analysis.py       # Simple threat detection (legacy)
-├── dataset.csv              # Input security event logs
+├── src/
+│   ├── dashboard.py         # HTML dashboard generation
+│   ├── detection.py         # Rule-based threat detection
+│   ├── loader.py            # Data loading and normalization
+│   ├── ml.py                # Behavioral ML analysis
+│   └── pipeline_v3.py       # Main analysis pipeline
+├── data/
+│   └── raw/                 # Downloaded dataset storage
 ├── outputs/
-│   ├── alerts_full.csv      # All detected alerts
-│   ├── aggregated_windows.csv # Behavioral features
+│   ├── alerts_full.json     # All detected alerts
+│   ├── aggregated_windows.json # Behavioral features
 │   └── dashboard.html       # Interactive visualization
 ├── uploads/
-│   └── dataset.csv          # Staging area for datasets
+│   └── requirements.txt     # Python requirements
 └── README.md                # This file
-```
-
-### Requirements
-```
-pandas
-numpy
-scikit-learn
-plotly
-requests
 ```
 
 ### Installation
 ```bash
-pip install pandas numpy scikit-learn plotly requests
+pip install -r uploads/requirements.txt
 ```
 
 ### Usage
 
 **Run the full analysis pipeline:**
 ```bash
-python pipeline_v2.py
-```
-
-**Run simple threat detection:**
-```bash
-python threat_analysis.py
+python src/pipeline_v3.py
 ```
 
 ### Output Files
 
-1. **alerts_full.csv** - Complete alert records with all detection flags and scores
-2. **aggregated_windows.csv** - Behavioral features by host and time window
+1. **alerts_full.json** - Complete alert records with all detection flags and scores
+2. **aggregated_windows.json** - Behavioral features by host and time window
 3. **dashboard.html** - Interactive dashboard showing threat patterns and anomalies
 
 ### Detection Rules
@@ -149,48 +140,39 @@ python threat_analysis.py
 
 ### โครงสร้างโครงการ
 ```
-├── pipeline_v2.py           # Pipeline การวิเคราะห์หลัก
-├── threat_analysis.py       # การตรวจจับภัยคุกคามแบบง่าย (เสียหนาย)
-├── dataset.csv              # ไฟล์ security event logs อินพุต
+├── src/
+│   ├── dashboard.py         # สร้างแดชบอร์ด HTML
+│   ├── detection.py         # ตรวจจับภัยคุกคามตามกฎเกณฑ์
+│   ├── loader.py            # โหลดและจัดการข้อมูล
+│   ├── ml.py                # วิเคราะห์พฤติกรรมด้วย ML
+│   └── pipeline_v3.py       # Pipeline การวิเคราะห์หลัก
+├── data/
+│   └── raw/                 # จัดเก็บชุดข้อมูลที่ดาวน์โหลดมา
 ├── outputs/
-│   ├── alerts_full.csv      # Alert ที่ตรวจจับทั้งหมด
-│   ├── aggregated_windows.csv # ฟีเจอร์พฤติกรรม
+│   ├── alerts_full.json     # Alert ที่ตรวจจับทั้งหมด
+│   ├── aggregated_windows.json # ฟีเจอร์พฤติกรรม
 │   └── dashboard.html       # การแสดงภาพแบบโต้ตอบ
 ├── uploads/
-│   └── dataset.csv          # บริเวณเก็บข้อมูล
+│   └── requirements.txt     # ความต้องการไลบรารีของ Python
 └── README.md                # ไฟล์นี้
-```
-
-### ข้อกำหนด
-```
-pandas
-numpy
-scikit-learn
-plotly
-requests
 ```
 
 ### การติดตั้ง
 ```bash
-pip install pandas numpy scikit-learn plotly requests
+pip install -r uploads/requirements.txt
 ```
 
 ### การใช้งาน
 
-**รัน pipeline การวิเคราะห์แบบเต็ม:**
+**รัน pipeline การวิเคราะห์หลัก:**
 ```bash
-python pipeline_v2.py
-```
-
-**รันการตรวจจับภัยคุกคามแบบง่าย:**
-```bash
-python threat_analysis.py
+python src/pipeline_v3.py
 ```
 
 ### ไฟล์เอาท์พุต
 
-1. **alerts_full.csv** - บันทึก alert ที่สมบูรณ์พร้อมธงการตรวจจับทั้งหมดและคะแนน
-2. **aggregated_windows.csv** - ฟีเจอร์พฤติกรรมตามเจ้าภาพและหน้าต่างเวลา
+1. **alerts_full.json** - บันทึก alert ที่สมบูรณ์พร้อมธงการตรวจจับทั้งหมดและคะแนน
+2. **aggregated_windows.json** - ฟีเจอร์พฤติกรรมตามเจ้าภาพและหน้าต่างเวลา
 3. **dashboard.html** - แดชบอร์ดแบบโต้ตอบแสดงลักษณะและความผิดปกติของภัยคุกคาม
 
 ### กฎการตรวจจับ

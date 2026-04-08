@@ -1,76 +1,128 @@
-"""loader.py — Load & normalize raw Sysmon/Mordor logs into a standard DataFrame"""
+"""
+loader.py — Load & normalize raw Sysmon/Mordor logs into a standard DataFrame
+Task 1: Smart Data Loader with State Tracking
+"""
 
+import os
 from io import BytesIO
 from pathlib import Path
-import xml.etree.ElementTree as ET
 from zipfile import ZipFile
+
 import numpy as np
 import pandas as pd
 import requests
-import os
 
 def safe_col(df, *names, default=np.nan):
+    """
+    Safely get the first matching column in names.
+    Preserved for compatibility with detection.py
+    """
     for n in names:
         if n in df.columns:
             return df[n]
     return pd.Series(default, index=df.index)
 
-
-def load_dataset(source):
-    """Load from URL(s) (zip), or local .json / .jsonl / .xml / .csv"""
-    Path("uploads").mkdir(exist_ok=True)
-    out_file = Path("uploads/uploads.json")
+def get_smart_data(urls, force_update=False):
+    """
+    Downloads datasets and extracts JSON if URLs change or force_update=True.
+    Reads from data/raw/current_dataset.json otherwise to skip download.
+    Returns: pandas DataFrame
+    """
+    raw_dir = Path("data/raw")
+    out_dir = Path("outputs")
     
-    if isinstance(source, list):
-        frames = []
-        for url in source:
-            if str(url).startswith("http"):
-                print(f"Downloading {url} ...")
-                zf = ZipFile(BytesIO(requests.get(url).content))
-                extracted_file = zf.extract(zf.namelist()[0])
-                df = pd.read_json(extracted_file, lines=True)
-                frames.append(df)
-                os.remove(extracted_file)
-            else:
-                p = Path(url)
-                if p.suffix in (".json", ".jsonl"):
-                    frames.append(pd.read_json(p, lines=True))
+    # Ensure professional project structure exists
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    
+    state_file = raw_dir / "source_url.txt"
+    data_file = raw_dir / "current_dataset.json"
+    
+    # Handle single string gracefully
+    if isinstance(urls, str):
+        urls = [urls]
         
-        combined = pd.concat(frames, ignore_index=True)
-        # Overwrite to uploads.json
-        combined.to_json(out_file, orient="records", lines=True)
-        return combined
-
-    if str(source).startswith("http"):
-        zf = ZipFile(BytesIO(requests.get(source).content))
-        extracted = zf.extract(zf.namelist()[0])
-        df = pd.read_json(extracted, lines=True)
-        # Overwrite to uploads.json
-        df.to_json(out_file, orient="records", lines=True)
-        os.remove(extracted)
-        return df
-
-    p = Path(source)
-    if p.suffix in (".json", ".jsonl"):
-        return pd.read_json(p, lines=True)
-    elif p.suffix == ".xml":
-        tree = ET.parse(p)
-        rows = [{c.tag: c.text for c in event} for event in tree.getroot()]
-        return pd.DataFrame(rows)
+    urls_key = ",".join(urls)
+    
+    # State Tracking: Read current stored URL
+    current_url_key = None
+    if state_file.exists():
+        try:
+            with open(state_file, "r", encoding="utf-8") as f:
+                current_url_key = f.read().strip()
+        except Exception as e:
+            print(f"[!] Warning: Could not read {state_file}: {e}")
+            
+    # Conditional Download Logic
+    if (not force_update) and (current_url_key == urls_key) and data_file.exists():
+        print(f"[*] Data already up-to-date. Skipping download.")
     else:
-        return pd.read_csv(p, low_memory=False)
+        frames = []
+        for url in urls:
+            print(f"[*] Downloading dataset from: {url}")
+            try:
+                # Download the zip
+                response = requests.get(url, timeout=30)
+                response.raise_for_status()
+                
+                # Extract JSON from memory
+                with ZipFile(BytesIO(response.content)) as zf:
+                    extracted_name = zf.namelist()[0]
+                    with zf.open(extracted_name) as src:
+                        df_part = pd.read_json(src, lines=True)
+                        frames.append(df_part)
+                        
+            except Exception as e:
+                print(f"[!] Error during download/extraction of {url}: {e}")
+                raise
+                
+        # Combine dataframes
+        print("[*] Combining datasets and saving to cache...")
+        combined_df = pd.concat(frames, ignore_index=True)
+        # Overwrite current_dataset.json
+        combined_df.to_json(data_file, orient="records", lines=True)
+            
+        # State Update: save the new completed URL string
+        with open(state_file, "w", encoding="utf-8") as f:
+            f.write(urls_key)
+                
+        print(f"[*] Successfully extracted and combined dataset to {data_file}")
+            
+    # Data Loading
+    try:
+        print(f"[*] Loading dataset into Pandas DataFrame...")
+        # read_json with lines=True as instructed
+        df = pd.read_json(data_file, lines=True)
+        return df
+    except Exception as e:
+        print(f"[!] Error reading JSON file into DataFrame: {e}")
+        raise
 
 
 def normalize(df):
-    """Normalize Sysmon/Security log column names into generic _process, _parent etc."""
-    df["@timestamp"]       = pd.to_datetime(df.get("@timestamp"), utc=True, errors="coerce")
-    df                     = df.dropna(subset=["@timestamp"]).copy()
-    df["_process"]         = safe_col(df, "Image", "NewProcessName").astype(str)
-    df["_parent"]          = safe_col(df, "ParentImage", "ParentProcessName").astype(str)
-    df["_cmd"]             = safe_col(df, "CommandLine").astype(str)
-    df["_host"]            = safe_col(df, "Hostname", "Computer").fillna("UNKNOWN").astype(str)
-    df["_user"]            = safe_col(df, "User").fillna("UNKNOWN").astype(str)
-    df["_image_loaded"]    = safe_col(df, "ImageLoaded").astype(str)
-    df["_target_image"]    = safe_col(df, "TargetImage").astype(str)
-    df["_target_filename"] = safe_col(df, "TargetFilename").astype(str)
-    return df
+    """
+    Normalize Sysmon/Security log column names into generic representations.
+    Uses .get() method to prevent KeyErrors per Task 2.
+    """
+    try:
+        # Date parsing
+        df["@timestamp"] = pd.to_datetime(df.get("@timestamp"), utc=True, errors="coerce")
+        df = df.dropna(subset=["@timestamp"]).copy()
+        
+        # Standardize column names with .get() fallbacks to prevent KeyErrors
+        df["_process"] = df.get("Image", df.get("NewProcessName", pd.Series(dtype="object"))).fillna("UNKNOWN").astype(str)
+        df["_parent"]  = df.get("ParentImage", df.get("ParentProcessName", pd.Series(dtype="object"))).fillna("UNKNOWN").astype(str)
+        df["_cmd"]     = df.get("CommandLine", pd.Series(dtype="object")).fillna("UNKNOWN").astype(str)
+        df["_host"]    = df.get("Hostname", df.get("Computer", pd.Series(dtype="object"))).fillna("UNKNOWN").astype(str)
+        df["_user"]    = df.get("User", pd.Series(dtype="object")).fillna("UNKNOWN").astype(str)
+        
+        # Additional image and script columns
+        df["_image_loaded"]    = df.get("ImageLoaded", pd.Series(dtype="object")).fillna("").astype(str)
+        df["_target_image"]    = df.get("TargetImage", pd.Series(dtype="object")).fillna("").astype(str)
+        df["_target_filename"] = df.get("TargetFilename", pd.Series(dtype="object")).fillna("").astype(str)
+        
+        return df
+        
+    except Exception as e:
+        print(f"[!] Error normalizing dataset: {e}")
+        raise
