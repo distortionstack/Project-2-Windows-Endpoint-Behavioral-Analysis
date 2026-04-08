@@ -208,6 +208,6 @@ python src/pipeline_v3.py
 
 ---
 
-**Author**: Security Analyst  
+**Author**: Natapat Trajan 
 **Last Updated**: 2026-04-08  
 **Version**: 2.0
