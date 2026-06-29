@@ -1,0 +1,81 @@
+project_root/
+├── src/                             # Source code หลักของโปรเจกต์
+│   ├── __init__.py
+│   ├── main.py                      # Entry point (CLI, pipeline orchestration)
+│   │
+│   ├── config/                      # ⚙️ การตั้งค่าและค่าคงที่ (แยกจาก Logic)
+│   │   ├── __init__.py
+│   │   ├── settings.py              # Path, window size, model params, contamination
+│   │   ├── regex.py                 # Regex patterns (hack tools, attack sigs, DNS)
+│   │   ├── mitre.py                 # MITRE labels, descriptions (ไม่มี weight/score)
+│   │   └── constants.py             # Sysmon Event IDs, default values
+│   │
+│   ├── loader/                      # 📥 โหลดและปรับรูปข้อมูลดิบ
+│   │   ├── __init__.py
+│   │   ├── loader.py                # อ่าน file/url/archive (zip, tar, json)
+│   │   ├── normalize.py             # แปลง nested JSON/XML, standardize columns
+│   │   └── cache.py                 # จัดการ caching (กันโหลดซ้ำ)
+│   │
+│   ├── features/                    # 🧠 Feature Engineering (หัวใจหลักของระบบ)
+│   │   ├── __init__.py
+│   │   ├── extractor.py             # Orchestrator: เรียกใช้ feature ย่อยๆ มารวมกัน
+│   │   ├── aggregate.py             # Time-window aggregation (5min)
+│   │   ├── command.py               # Features จาก CommandLine (length, encoded)
+│   │   ├── process.py               # Features จาก Process (depth, system ctx)
+│   │   ├── network.py               # Features จาก Network (suspicious ports/IPs)
+│   │   ├── file.py                  # Features จาก File (temp writes, unsigned)
+│   │   └── mitre.py                 # Map พฤติกรรมเป็น MITRE features (return 0/1)
+│   │
+│   ├── ml/                          # 🤖 Machine Learning Pipeline
+│   │   ├── __init__.py
+│   │   ├── preprocessing.py         # Scaling (RobustScaler), handling missing values
+│   │   ├── train.py                 # Train Isolation Forest / LightGBM (Mordor)
+│   │   ├── predict.py               # Inference / Scoring (Log จริง)
+│   │   ├── evaluation.py            # Metrics (ถ้ามี label จาก dataset)
+│   │   └── explain.py               # Permutation Importance / SHAP
+│   │
+│   ├── detection/                   # 🚨 ตีความผล ML เป็น Severity (บางมาก)
+│   │   ├── __init__.py
+│   │   └── severity.py              # คำนวณ severity_score, risk_level, top_reasons
+│   │
+│   ├── dashboard/                   # 📊 Visualization
+│   │   ├── __init__.py
+│   │   ├── builder.py               # สร้าง HTML + Plotly charts
+│   │   └── theme.py                 # สี, layout, CSS (แยกจาก logic ให้แก้ได้ง่าย)
+│   │
+│   ├── export/                      # 💾 Export ผลลัพธ์
+│   │   ├── __init__.py
+│   │   └── json_export.py           # ส่งออก alerts_full.json, aggregated_windows.json
+│   │
+│   ├── schemas/                     # 🛡️ Data Validation (เช็ครูปแบบข้อมูล)
+│   │   ├── __init__.py
+│   │   ├── raw.py                   # Validate raw log columns (REQUIRED/OPTIONAL)
+│   │   ├── feature.py               # Validate feature vector columns
+│   │   └── window.py                # Validate aggregated window columns
+│   │
+│   └── utils/                       # 🛠️ เครื่องมือเสริม
+│       ├── __init__.py
+│       └── logger.py                # Custom logging setup
+│
+├── artifacts/                       # 📦 เก็บ Model ที่เทรนแล้ว (Git-ignored)
+│   ├── model.pkl
+│   ├── scaler.pkl
+│   └── label_encoder.pkl
+│
+├── data/                            # 🗄️ เก็บ Cache และ Dataset (Git-ignored)
+│   └── raw/
+│
+├── outputs/                         # 📤 ผลลัพธ์การรันแต่ละครั้ง (Git-ignored)
+│   ├── alerts_full.json
+│   ├── aggregated_windows.json
+│   └── dashboard.html
+│
+├── tests/                           # 🧪 Unit tests (เพิ่มเข้ามาเพื่อความมั่นคง)
+│   ├── __init__.py
+│   ├── test_loader.py
+│   ├── test_features.py
+│   └── test_ml.py
+│
+├── .gitignore                       #.Ignore artifacts/, data/, outputs/, __pycache__/
+├── requirements.txt                 # Dependencies (pandas, scikit-learn, plotly, etc.)
+└── README.md                        # คำอธิบายโปรเจกต์และวิธีรัน

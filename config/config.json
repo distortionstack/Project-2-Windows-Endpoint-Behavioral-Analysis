@@ -1,0 +1,68 @@
+{
+  "detection": {
+    "suspicious_ports": [445, 3389, 5985, 5986],
+    "suspicious_extensions": ["exe", "dll", "vbs", "bat", "com", "scr", "pif", "msi"],
+    "suspicious_ips": {
+      "multicast": "^224\\.0\\.0\\.\\d+",
+      "broadcast": "^239\\.255\\.255\\.250",
+      "full_broadcast": "^255\\.255\\.255\\.255",
+      "any": "^0\\.0\\.0\\.0"
+    },
+    "suspicious_domains": [
+      ".tk", ".ml", ".ga", ".cf",
+      "bit.ly", "tinyurl", "pastebin", "raw.github"
+    ],
+    "hack_tools": [
+      "mimikatz", "psexec", "cobalt", "meterpreter", "rubeus",
+      "seatbelt", "bloodhound", "sharphound"
+    ],
+    "attack_signatures": [
+      "Invoke-Mimikatz", "lsadump", "kerberoast", "certutil", "wmic"
+    ]
+  },
+  "ml": {
+    "time_window": "5min",
+    "min_windows_for_ml": 1,
+    "isolation_forest": {
+      "n_estimators": 200,
+      "contamination": 0.15,
+      "random_state": 42
+    },
+    "severity_thresholds": {
+      "low": [0, 1],
+      "medium": [1, 3],
+      "high": [3, 6],
+      "critical": [6, 999999]
+    }
+  },
+  "feature_engineering": {
+    "long_ps_cmd_threshold": 400,
+    "process_depth_percentile": 75
+  },
+  "cache": {
+    "enabled": true,
+    "directory": "data/raw",
+    "use_etag": true
+  },
+  "lightgbm": {
+    "n_estimators": 200,
+    "max_depth": 10,
+    "learning_rate": 0.05,
+    "num_leaves": 31,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "random_state": 42,
+    "n_jobs": -1,
+    "verbose": -1
+  },
+  "model_persistence": {
+    "enabled": true,
+    "model_dir": "models",
+    "scaler_filename": "robust_scaler.pkl",
+    "isolation_forest_filename": "isolation_forest.pkl",
+    "lightgbm_filename": "lightgbm_model.txt",
+    "lightgbm_scaler_filename": "lightgbm_scaler.pkl",
+    "lightgbm_encoder_filename": "lightgbm_encoder.pkl",
+    "lightgbm_features_filename": "lightgbm_features.pkl"
+  }
+}

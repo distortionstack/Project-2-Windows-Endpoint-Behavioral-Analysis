@@ -1,0 +1,1 @@
+https://github.com/OTRF/Security-Datasets/raw/refs/heads/master/datasets/compound/LSASS_campaign_01/metasploit_logonpasswords_lsass_memory_dump.zip
