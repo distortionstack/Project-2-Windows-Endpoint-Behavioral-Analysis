@@ -1,5 +1,4 @@
-# Vetala
-## Windows Endpoint Behavioral Analysis
+# Vetala (Windows Endpoint Behavioral Analysis)
 
 <p align="center">
   <img width="367" height="604" alt="image" src="https://github.com/user-attachments/assets/c8cae993-f75f-4262-947c-5945ba87f0d4" />
