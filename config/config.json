@@ -1,12 +1,14 @@
 {
   "detection": {
-    "suspicious_ports": [445, 3389, 5985, 5986],
+    "suspicious_ports": [80, 88, 445, 3389, 5985, 5986],
     "suspicious_extensions": ["exe", "dll", "vbs", "bat", "com", "scr", "pif", "msi"],
     "suspicious_ips": {
       "multicast": "^224\\.0\\.0\\.\\d+",
       "broadcast": "^239\\.255\\.255\\.250",
       "full_broadcast": "^255\\.255\\.255\\.255",
-      "any": "^0\\.0\\.0\\.0"
+      "any": "^0\\.0\\.0\\.0",
+      "lab_range_10": "^10\\.10\\.10\\.",
+      "lab_range_172": "^172\\.18\\.(38|39)\\."
     },
     "suspicious_domains": [
       ".tk", ".ml", ".ga", ".cf",

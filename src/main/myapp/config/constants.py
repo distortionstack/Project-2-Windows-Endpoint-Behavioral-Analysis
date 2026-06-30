@@ -177,6 +177,7 @@ REASON_MAP = [
     ("susp_dll_path_sum",       "Suspicious DLL"),
     ("is_temp_write_sum",       "Temp Write"),
     ("has_powershell_sum",      "PowerShell"),
+    ("susp_ip_sum",             "Suspicious IP"),
     ("susp_port_sum",           "Suspicious Port"),
     ("susp_dns_sum",            "Suspicious DNS"),
     ("is_process_injection_sum","Process Injection"),
@@ -184,6 +185,6 @@ REASON_MAP = [
     ("has_wmic_sum",            "WMIC"),
 ]
 
-DATA_SUFFIXES    = (".json", ".jsonl", ".ndjson", ".csv", "xml")
+DATA_SUFFIXES    = (".json", ".jsonl", ".ndjson", ".csv", ".xml", ".cap", ".pcap", ".pcapng")
 ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz")
 CACHE_DIR        = Path("data/raw")

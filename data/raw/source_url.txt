@@ -1,1 +1,1 @@
-https://github.com/OTRF/Security-Datasets/raw/refs/heads/master/datasets/atomic/windows/credential_access/host/psh_lsass_memory_dump_comsvcs.zip
+https://github.com/OTRF/Security-Datasets/raw/refs/heads/master/datasets/compound/LSASS_campaign_01/metasploit_logonpasswords_lsass_memory_dump_pcapng.zip

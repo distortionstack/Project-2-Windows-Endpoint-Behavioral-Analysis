@@ -42,7 +42,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Analyze Windows endpoint event logs.")
     parser.add_argument(
         "-s", "--source", action="append",
-        default=["https://github.com/OTRF/Security-Datasets/raw/refs/heads/master/datasets/atomic/windows/credential_access/host/psh_lsass_memory_dump_comsvcs.zip"],
+        default=["https://github.com/OTRF/Security-Datasets/raw/refs/heads/master/datasets/compound/LSASS_campaign_01/metasploit_logonpasswords_lsass_memory_dump_pcapng.zip"],
         required=False,
         help="Input source (path, URL, ZIP, tar.gz, JSON, CSV).",
     )
@@ -56,6 +56,10 @@ def parse_args():
     parser.add_argument(
         "--train", action="store_true",
         help="Train LightGBM model on loaded sources before inference.",
+    )
+    parser.add_argument(
+        "-n", "--net-source", action="append", default=[],
+        help="Network telemetry source: Suricata eve.json, Zeek conn.log, or .pcap file.",
     )
     return parser.parse_args()
 
@@ -124,7 +128,7 @@ def print_summary(df, agg, suspicious_windows, threats, evaluation=None, supervi
                 print(f"   {col:<30} : {total:>4}")
 
 
-def run_pipeline(sources, force_update=False, open_browser=True, model_type="isolation_forest", do_train=False):
+def run_pipeline(sources, force_update=False, open_browser=True, model_type="isolation_forest", do_train=False, net_sources=None):
     try:
         if do_train and model_type == "lightgbm":
             print("[TRAIN] Preparing supervised training data...")
@@ -207,8 +211,19 @@ def run_pipeline(sources, force_update=False, open_browser=True, model_type="iso
             f"{evaluation['event_level']['sigma_matched_events']} events matched"
         )
 
+        network_df = None
+        if net_sources:
+            from src.main.myapp.network.loaders import load_network_sources
+            from src.main.myapp.network.features import add_network_features
+            from src.main.myapp.network.severity import add_network_severity
+            print("[net] Loading network telemetry...")
+            network_df = load_network_sources(net_sources)
+            if not network_df.empty:
+                network_df = add_network_features(network_df)
+                network_df = add_network_severity(network_df)
+
         print("[6/6] Building dashboard...")
-        build_dashboard(df, agg, suspicious_windows, threats, feat_deviation, OUT_DASH, evaluation=evaluation)
+        build_dashboard(df, agg, suspicious_windows, threats, feat_deviation, OUT_DASH, evaluation=evaluation, network_df=network_df)
         print_summary(df, agg, suspicious_windows, threats, evaluation, supervised_eval)
 
         if open_browser:
@@ -238,6 +253,7 @@ def main():
         open_browser=not args.no_browser,
         model_type=args.model_type,
         do_train=args.train,
+        net_sources=args.net_source,
     )
 
 

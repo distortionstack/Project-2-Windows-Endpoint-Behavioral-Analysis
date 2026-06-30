@@ -1,0 +1,42 @@
+{
+  "sigma_comparison": {
+    "window_level": {
+      "total_windows": 3,
+      "ml_positive_windows": 1,
+      "sigma_positive_windows": 0,
+      "true_positives": 0,
+      "false_positives": 1,
+      "false_negatives": 0,
+      "true_negatives": 2,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1_score": 0.0
+    },
+    "event_level": {
+      "total_events": 4373,
+      "sigma_matched_events": 0,
+      "sigma_match_rate": 0.0
+    }
+  },
+  "attack_chain_analysis": {
+    "total_hosts_with_chains": 1,
+    "total_transitions": 11,
+    "total_pattern_matches": 0,
+    "pattern_breakdown": {},
+    "top_transitions": [
+      {
+        "from_tactic": "Command and Control",
+        "to_tactic": "Lateral Movement",
+        "count": 6,
+        "label": "Command and Control \u2192 Lateral Movement"
+      },
+      {
+        "from_tactic": "Lateral Movement",
+        "to_tactic": "Command and Control",
+        "count": 5,
+        "label": "Lateral Movement \u2192 Command and Control"
+      }
+    ],
+    "total_chains": 1
+  }
+}

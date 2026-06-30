@@ -10,3 +10,5 @@ joblib
 lightgbm
 matplotlib
 seaborn
+scapy
+dpkt>=1.9.7

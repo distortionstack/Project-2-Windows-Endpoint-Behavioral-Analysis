@@ -443,6 +443,197 @@ def build_event_table(df_in, max_rows=25):
     return rows
 
 
+def build_network_section(network_df) -> str:
+    """Returns an HTML string for the Network Traffic tab, or '' if no data."""
+    if network_df is None or network_df.empty:
+        return ""
+
+    total_flows = len(network_df)
+    unique_src_ips = network_df["src_ip"].nunique() if "src_ip" in network_df.columns else 0
+    unique_dst_ips = network_df["dst_ip"].nunique() if "dst_ip" in network_df.columns else 0
+    suspicious_flows = 0
+    if "severity" in network_df.columns:
+        suspicious_flows = int((network_df["severity"].astype(str) != "low").sum())
+    suricata_alerts = 0
+    if "alert_signature" in network_df.columns:
+        suricata_alerts = int(network_df["alert_signature"].notna().sum())
+
+    # Chart 1: Flow count over time (5-min buckets)
+    fig_net1 = go.Figure()
+    if "@timestamp" in network_df.columns:
+        ts_series = pd.to_datetime(network_df["@timestamp"], errors="coerce")
+        ts_grp = ts_series.dt.floor("5min").value_counts().sort_index().reset_index()
+        ts_grp.columns = ["ts", "count"]
+        if not ts_grp.empty:
+            fig_net1.add_trace(go.Scatter(
+                x=ts_grp["ts"], y=ts_grp["count"],
+                fill="tozeroy", fillcolor="rgba(88,166,255,0.12)",
+                line=dict(color=C_BLUE, width=2), name="Flows",
+            ))
+    fig_net1.update_layout(**BASE_LAYOUT, title="Network Flow Volume Over Time", height=240)
+    fig_net1.update_xaxes(gridcolor=C_BORD, zeroline=False)
+    fig_net1.update_yaxes(gridcolor=C_BORD, zeroline=False)
+
+    # Chart 2: Top 10 destination IPs by flow count
+    fig_net2 = go.Figure()
+    if "dst_ip" in network_df.columns:
+        top_dsts = network_df["dst_ip"].value_counts().nlargest(10).reset_index()
+        top_dsts.columns = ["dst_ip", "count"]
+        if not top_dsts.empty:
+            fig_net2.add_trace(go.Bar(
+                x=top_dsts["count"], y=top_dsts["dst_ip"],
+                orientation="h", marker_color=C_BLUE,
+            ))
+    fig_net2.update_layout(**BASE_LAYOUT, title="Top 10 Destination IPs by Flow Count", height=280)
+    fig_net2.update_xaxes(gridcolor=C_BORD)
+    fig_net2.update_yaxes(gridcolor=C_BORD)
+
+    # Suspicious flows table (severity above low, sorted by score, capped at 50 rows)
+    susp_df = network_df.copy()
+    if "severity" in susp_df.columns:
+        susp_df = susp_df[susp_df["severity"].astype(str) != "low"]
+    if "severity_score" in susp_df.columns:
+        susp_df = susp_df.sort_values("severity_score", ascending=False)
+    susp_df = susp_df.head(50)
+
+    _src_colors = {"suricata": C_AMBER, "zeek": C_BLUE, "pcap": C_PURPLE}
+
+    net_rows = ""
+    for _, r in susp_df.iterrows():
+        ts = str(r.get("@timestamp", ""))[:19].replace("T", " ")
+
+        sp = r.get("src_port")
+        dp = r.get("dst_port")
+        src_port_str = str(int(sp)) if pd.notna(sp) else ""
+        dst_port_str = str(int(dp)) if pd.notna(dp) else ""
+        src = f"{r.get('src_ip', '')}:{src_port_str}"
+        dst = f"{r.get('dst_ip', '')}:{dst_port_str}"
+
+        proto = str(r.get("proto", ""))
+
+        sent = r.get("bytes_sent")
+        recv = r.get("bytes_recv")
+        if pd.notna(sent) and pd.notna(recv):
+            bytes_info = f"{int(sent):,} / {int(recv):,}"
+        elif pd.notna(sent):
+            bytes_info = f"{int(sent):,}"
+        else:
+            bytes_info = "—"
+
+        sev_badge = _severity_badge(str(r.get("severity", "low")))
+
+        reason = str(r.get("top_reasons") or r.get("alert_signature") or "—")
+        reason_display = reason[:60] + ("…" if len(reason) > 60 else "")
+
+        source_type = str(r.get("_source_type", ""))
+        sc = _src_colors.get(source_type, C_MUTED)
+        source_badge = (
+            f'<span style="background:{sc}22;border:1px solid {sc}44;'
+            f'border-radius:3px;padding:1px 6px;font-size:10px;'
+            f'color:{sc};font-weight:600">{source_type}</span>'
+        )
+
+        net_rows += (
+            f"<tr>"
+            f"<td>{ts}</td>"
+            f"<td style='font-family:monospace'>{src}</td>"
+            f"<td style='font-family:monospace'>{dst}</td>"
+            f"<td>{proto}</td>"
+            f"<td style='font-family:monospace'>{bytes_info}</td>"
+            f"<td>{sev_badge}</td>"
+            f"<td title='{reason}'>{reason_display}</td>"
+            f"<td>{source_badge}</td>"
+            f"</tr>\n"
+        )
+
+    if not net_rows:
+        net_rows = (
+            f'<tr><td colspan="8" style="text-align:center;color:{C_MUTED};'
+            f'padding:24px;font-style:italic;font-size:11px">'
+            f'No suspicious network flows detected</td></tr>'
+        )
+
+    return f"""<div class="section" id="s-network">
+  <div class="s-head">
+    <div class="s-icon ic-bl">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#4a89c4" stroke-width="1.5">
+        <circle cx="8" cy="8" r="3"/><line x1="8" y1="1" x2="8" y2="5"/>
+        <line x1="8" y1="11" x2="8" y2="15"/><line x1="1" y1="8" x2="5" y2="8"/>
+        <line x1="11" y1="8" x2="15" y2="8"/>
+      </svg>
+    </div>
+    <span class="s-title">Network Traffic Telemetry</span>
+    <span class="s-meta">Suricata · Zeek · pcap — parallel analysis pipeline</span>
+  </div>
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="kpi-bar"></div>
+      <div class="kpi-lbl">Total Flows</div>
+      <div class="kpi-val">{total_flows:,}</div>
+      <div class="kpi-sub">Network flow records</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-bar"></div>
+      <div class="kpi-lbl">Unique Source IPs</div>
+      <div class="kpi-val">{unique_src_ips:,}</div>
+      <div class="kpi-sub">Distinct source addresses</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-bar"></div>
+      <div class="kpi-lbl">Unique Dest IPs</div>
+      <div class="kpi-val">{unique_dst_ips:,}</div>
+      <div class="kpi-sub">Distinct destination addresses</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-bar"></div>
+      <div class="kpi-lbl">Suspicious Flows</div>
+      <div class="kpi-val">{suspicious_flows:,}</div>
+      <div class="kpi-sub">Severity above low</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-bar"></div>
+      <div class="kpi-lbl">Suricata Alerts</div>
+      <div class="kpi-val">{suricata_alerts:,}</div>
+      <div class="kpi-sub">Native alert signatures</div>
+    </div>
+  </div>
+  <div class="g2">
+    <div class="card">{_div(fig_net1)}</div>
+    <div class="card">{_div(fig_net2)}</div>
+  </div>
+  <div class="s-head" style="margin-top:16px">
+    <div class="s-icon ic-re">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#c94040" stroke-width="1.5">
+        <path d="M8 2L1 14h14L8 2z"/><line x1="8" y1="7" x2="8" y2="10"/>
+        <circle cx="8" cy="12.5" r=".5" fill="#c94040"/>
+      </svg>
+    </div>
+    <span class="s-title">Suspicious Network Flows</span>
+    <span class="s-meta">Heuristic-scored · severity above low · top 50</span>
+  </div>
+  <div class="card-p">
+    <div class="toolbar">
+      <div class="sw">
+        <input class="si" id="fi-network" type="text"
+          placeholder="Filter by IP, protocol, severity…"
+          oninput="ft(this,'tb-network','rc-network')"/>
+      </div>
+      <span class="rc" id="rc-network"></span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th><th>Source</th><th>Destination</th>
+          <th>Proto</th><th>Bytes (Sent/Recv)</th><th>Severity</th>
+          <th>Reason / Alert</th><th>Source Type</th>
+        </tr>
+      </thead>
+      <tbody id="tb-network">{net_rows}</tbody>
+    </table>
+  </div>
+</div>"""
+
+
 def build_eval_pr_chart(evaluation: dict) -> go.Figure:
     fig = go.Figure()
     if not evaluation:
@@ -515,12 +706,18 @@ def build_sigma_table(evaluation: dict) -> str:
 
 
 
-def build_dashboard(df, agg, suspicious_windows, threats, feat_deviation, out_path, evaluation=None):
+def build_dashboard(df, agg, suspicious_windows, threats, feat_deviation, out_path, evaluation=None, network_df=None):
     logger.info("Building dashboard...")
 
     if df is None or df.empty:
         logger.warning("DataFrame is empty. Skipping dashboard generation.")
         return
+
+    network_section_html = build_network_section(network_df)
+    network_nav_tab = (
+        """<a class="nav-a" href="#s-network" onclick="goTo(this,'s-network')">&#127760; Network Traffic</a>"""
+        if network_section_html else ""
+    )
 
     fig1, fig2, fig3, fig4, fig5, fig6, fig7, fig8, fig9, fig10 = build_charts(
         df, agg, suspicious_windows, feat_deviation, threats
@@ -772,6 +969,7 @@ tr.xhide{{display:none}}
     <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><polyline points="5,8 7,10 11,6"/></svg>
     Evaluation
   </a>
+  {network_nav_tab}
 </nav>
 
 <div class="main">
@@ -957,6 +1155,8 @@ tr.xhide{{display:none}}
     </div>
   </div>
 
+  {network_section_html}
+
 </div>
 
 <div class="footer">
@@ -1007,7 +1207,7 @@ function styleAlertRows() {{
   }});
 }}
 document.addEventListener('DOMContentLoaded', () => {{
-  [['tb-alerts','rc-alerts'],['tb-events','rc-events']].forEach(([tbId, rcId]) => {{
+  [['tb-alerts','rc-alerts'],['tb-events','rc-events'],['tb-network','rc-network']].forEach(([tbId, rcId]) => {{
     const tb = document.getElementById(tbId);
     const rc = document.getElementById(rcId);
     if (tb && rc) rc.textContent = tb.querySelectorAll('tr').length + ' rows';

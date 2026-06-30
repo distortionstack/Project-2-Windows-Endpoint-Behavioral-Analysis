@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 
 def export_results(threats, agg, out_dir: Path):
     export_cols = [
-        "@timestamp", "_host", "EventID", "_process", "_parent", "_cmd",
+        "@timestamp", "_host", "EventID", "_channel", "_action",
+        "_process", "_parent", "_cmd", "_net_dst",
+        "susp_port", "susp_ip", "susp_dns",
         "anomaly_score", "severity", "top_reasons", "mitre_techniques",
         "Hashes", "Signed", "SignatureStatus",
     ]

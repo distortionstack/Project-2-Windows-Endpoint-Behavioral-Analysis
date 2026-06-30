@@ -1,6 +1,7 @@
 """loader.py — Download Sigma rules from GitHub and cache locally."""
 
 import logging
+import time
 from pathlib import Path
 
 import requests
@@ -55,6 +56,7 @@ def load_rules(force_update=False):
     if not force_update:
         cached = sorted(CACHE_DIR.rglob("*.yml")) + sorted(CACHE_DIR.rglob("*.yaml"))
         if cached:
+            _t0 = time.time()
             rules = []
             for f in cached:
                 try:
@@ -65,6 +67,7 @@ def load_rules(force_update=False):
                     logger.debug(f"Skipping corrupt cache file {f}: {e}")
             if rules:
                 logger.info(f"Loaded {len(rules)} cached Sigma rules from {CACHE_DIR}")
+                logger.info(f"[TIMING] Loaded {len(rules)} Sigma rules in {time.time() - _t0:.2f}s")
                 return rules
 
     rule_paths = _discover_rule_paths()

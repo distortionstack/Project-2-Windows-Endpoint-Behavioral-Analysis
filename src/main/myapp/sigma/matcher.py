@@ -1,12 +1,27 @@
 """matcher.py — Match Sigma rules against normalized Windows event DataFrame."""
 
+import functools
 import logging
 import re
+import time
 from typing import Any
 
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+
+@functools.lru_cache(maxsize=2048)
+def _compile_glob(pattern: str) -> re.Pattern:
+    """Cache compiled glob patterns. No re.I — matches original _val_match behavior."""
+    p_re = re.escape(pattern).replace(r"\*", ".*").replace(r"\?", ".")
+    return re.compile(p_re)
+
+
+@functools.lru_cache(maxsize=512)
+def _compile_re(pattern: str) -> re.Pattern:
+    """Cache compiled regex patterns with re.I — matches original _val_match behavior."""
+    return re.compile(pattern, re.I)
 
 
 def _evaluate_condition(event: dict, detection: dict) -> bool:
@@ -50,11 +65,10 @@ def _evaluate_condition(event: dict, detection: dict) -> bool:
             return raw.endswith(p)
         if modifier == "re":
             try:
-                return bool(re.search(pattern, raw, re.I))
+                return bool(_compile_re(pattern).search(raw))
             except re.error:
                 return False
-        p_re = re.escape(p).replace(r"\*", ".*").replace(r"\?", ".")
-        return bool(re.fullmatch(p_re, raw))
+        return bool(_compile_glob(p).fullmatch(raw))
 
     cond = condition.strip().lower()
 
@@ -95,7 +109,67 @@ def _evaluate_condition(event: dict, detection: dict) -> bool:
     return bool(result)
 
 
+def _vectorize_selector_dict(
+    sel_dict: dict, df: pd.DataFrame, candidate_idx, get_col
+) -> "pd.Series | None":
+    """
+    Vectorize one Sigma selection dict: AND across fields, OR across values per field.
+    modifier=None uses fullmatch glob semantics to mirror _val_match's slow-path behavior.
+    Returns None for any unsupported modifier to signal fall-through to the slow path.
+    """
+    mask = pd.Series(True, index=df.index[candidate_idx])
+    for field, vals in sel_dict.items():
+        modifier = None
+        if "|" in field:
+            field, modifier = field.split("|", 1)
+        col = get_col(field).loc[df.index[candidate_idx]]
+        vals_list = vals if isinstance(vals, list) else [vals]
+        vals_lower = [str(v).lower() for v in vals_list]
+        sub = pd.Series(False, index=col.index)
+        for v in vals_lower:
+            if modifier == "contains":
+                sub |= col.str.contains(re.escape(v), na=False)
+            elif modifier is None:
+                # glob fullmatch — mirrors _val_match's re.fullmatch path exactly
+                p_re = re.escape(v).replace(r"\*", ".*").replace(r"\?", ".")
+                sub |= col.str.fullmatch(p_re, na=False)
+            elif modifier == "startswith":
+                sub |= col.str.startswith(v, na=False)
+            elif modifier == "endswith":
+                sub |= col.str.endswith(v, na=False)
+            else:
+                return None  # unsupported modifier → caller falls through to slow path
+        mask &= sub
+    return mask
+
+
 def _try_fast_match(df, named_sels, condition, candidate_idx, get_col):
+    # Fast path for "1 of selection*" — OR of per-selector vectorized masks
+    if re.match(r"^1 of selection\*?$", condition):
+        sel_keys = [k for k in named_sels if k.startswith("selection")]
+        if not sel_keys:
+            return None
+        combined = pd.Series(False, index=df.index[candidate_idx])
+        for key in sel_keys:
+            block = named_sels[key]
+            if isinstance(block, dict):
+                block_mask = _vectorize_selector_dict(block, df, candidate_idx, get_col)
+                if block_mask is None:
+                    return None
+                combined |= block_mask
+            elif isinstance(block, list):
+                for item in block:
+                    if not isinstance(item, dict):
+                        return None
+                    item_mask = _vectorize_selector_dict(item, df, candidate_idx, get_col)
+                    if item_mask is None:
+                        return None
+                    combined |= item_mask
+            else:
+                return None
+        return combined
+
+    # Existing paths — unchanged
     if condition not in ("selection", "selection and not filter", "all of them"):
         return None
     sel = named_sels.get("selection")
@@ -134,6 +208,8 @@ def match_rules(df: pd.DataFrame, rules: list[dict]) -> pd.DataFrame:
     df = df.copy()
     matched: list[list[str]] = [[] for _ in range(len(df))]
     str_cache: dict[str, pd.Series] = {}
+    _match_start = time.time()
+    _rule_times: dict[str, float] = {}
 
     def get_col(col: str) -> pd.Series:
         if col not in str_cache:
@@ -150,6 +226,8 @@ def match_rules(df: pd.DataFrame, rules: list[dict]) -> pd.DataFrame:
         if not isinstance(detection, dict):
             continue
 
+        _rule_t0 = time.time()
+
         category = rule.get("logsource", {}).get("category", "")
         category_mask = pd.Series(True, index=df.index)
         if category and "_event_name" in df.columns:
@@ -160,6 +238,7 @@ def match_rules(df: pd.DataFrame, rules: list[dict]) -> pd.DataFrame:
 
         candidate_idx = df.index[category_mask]
         if candidate_idx.empty:
+            _rule_times[title] = time.time() - _rule_t0
             continue
 
         named = {k: v for k, v in detection.items() if k != "condition"}
@@ -179,7 +258,17 @@ def match_rules(df: pd.DataFrame, rules: list[dict]) -> pd.DataFrame:
                 except Exception:
                     pass
 
+        _rule_times[title] = time.time() - _rule_t0
+
+    elapsed = time.time() - _match_start
     df["sigma_matched_rules"] = matched
     total = sum(1 for m in matched if m)
     logger.info(f"Sigma matching: {total}/{len(df)} events matched at least one rule")
+    logger.info(f"[TIMING] Matched {len(df)} events against {len(rules)} rules in {elapsed:.2f}s")
+
+    slow_rules = sorted(_rule_times.items(), key=lambda x: -x[1])[:5]
+    logger.info("[TIMING] Top 5 slowest rules:")
+    for rule_title, t in slow_rules:
+        logger.info(f"[TIMING]   {rule_title}: {t:.3f}s")
+
     return df

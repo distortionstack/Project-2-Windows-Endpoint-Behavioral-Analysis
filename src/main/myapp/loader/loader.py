@@ -133,6 +133,18 @@ def _read_xml_bytes(data: bytes, label: str) -> pd.DataFrame:
         raise ValueError(f"Failed to parse XML in {label}: {exc}") from exc
 
 
+def _read_cap_bytes(data: bytes, label: str) -> pd.DataFrame:
+    suffix = Path(label).suffix or ".cap"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(data)
+        tmp_path = Path(tmp.name)
+    try:
+        from src.main.myapp.loader.cap_reader import load_cap
+        return load_cap(tmp_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 def _read_non_archive(data: bytes, label: str) -> pd.DataFrame:
     ext = _extension(label)
     if ext == ".csv":
@@ -141,6 +153,8 @@ def _read_non_archive(data: bytes, label: str) -> pd.DataFrame:
         return _read_json_bytes(data, label)
     if ext == ".xml":
         return _read_xml_bytes(data, label)
+    if ext in {".cap", ".pcap", ".pcapng"}:
+        return _read_cap_bytes(data, label)
     raise ValueError(f"Unsupported data file type: {label}")
 
 
