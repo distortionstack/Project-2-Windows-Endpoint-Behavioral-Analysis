@@ -10,7 +10,7 @@ from src.main.myapp.config.settings import get
 
 logger = logging.getLogger(__name__)
 
-MODEL_DIR = Path(__file__).resolve().parent.parent.parent / "models"
+MODEL_DIR = Path(__file__).resolve().parents[4] / "models"
 SCALER_FILE = MODEL_DIR / get("model_persistence.scaler_filename", "robust_scaler.pkl")
 IFOREST_FILE = MODEL_DIR / get("model_persistence.isolation_forest_filename", "isolation_forest.pkl")
 MIN_WINDOWS_FOR_ML = get("ml.min_windows_for_ml", 50)

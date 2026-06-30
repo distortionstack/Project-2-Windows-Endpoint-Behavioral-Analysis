@@ -14,6 +14,10 @@ C_PURPLE = "#bc8cff"
 C_TEXT   = "#c9d1d9"
 C_MUTED  = "#8b949e"
 
+C_MG     = "#4d7a5e"   # Military green — primary accent
+C_MG_B   = "#62a87a"   # Military green bright — active/highlight
+C_MG_D   = "#2d4a38"   # Military green dark — background tint
+
 
 BASE_LAYOUT = dict(
     paper_bgcolor=C_CARD,

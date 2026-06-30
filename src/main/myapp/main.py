@@ -34,7 +34,7 @@ from src.main.myapp.ml.metrics import evaluate_model
 setup_logging()
 logger = logging.getLogger(__name__)
 
-OUT_DIR   = Path(__file__).resolve().parent.parent / "output"
+OUT_DIR   = Path(__file__).resolve().parents[3] / "output"
 OUT_DASH  = OUT_DIR / "dashboard.html"
 
 
@@ -42,7 +42,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Analyze Windows endpoint event logs.")
     parser.add_argument(
         "-s", "--source", action="append",
-        default=["https://github.com/OTRF/Security-Datasets/raw/refs/heads/master/datasets/compound/LSASS_campaign_01/metasploit_logonpasswords_lsass_memory_dump.zip"],
+        default=["https://github.com/OTRF/Security-Datasets/raw/refs/heads/master/datasets/atomic/windows/credential_access/host/psh_lsass_memory_dump_comsvcs.zip"],
         required=False,
         help="Input source (path, URL, ZIP, tar.gz, JSON, CSV).",
     )

@@ -18,6 +18,8 @@ from src.main.myapp.dashboard.theme import (
 
 logger = logging.getLogger(__name__)
 
+MITRE_BOOST = 1.5  # weight per MITRE technique tagged on an event row
+
 
 def build_charts(df, agg, suspicious_windows, feat_deviation, threats):
     tl = suspicious_windows.copy() if suspicious_windows is not None else pd.DataFrame()
@@ -191,12 +193,23 @@ def build_event_table(df_in, max_rows=25):
     if df_in is None or df_in.empty:
         return ""
 
+    df_in = df_in.copy()
+
     sort_col = (
         "severity_score"     if "severity_score"     in df_in.columns else
         "has_attack_sig_sum" if "has_attack_sig_sum" in df_in.columns else
         df_in.columns[0]
     )
-    df_plot = df_in.sort_values(sort_col, ascending=False).head(max_rows)
+
+    if "mitre_techniques" in df_in.columns:
+        mitre_count = df_in["mitre_techniques"].apply(
+            lambda x: len(x) if isinstance(x, list) else 0
+        )
+        df_in["_sort_score"] = df_in[sort_col].fillna(0) + (mitre_count * MITRE_BOOST)
+    else:
+        df_in["_sort_score"] = df_in[sort_col].fillna(0)
+
+    df_plot = df_in.sort_values("_sort_score", ascending=False).head(max_rows)
 
     # --- helpers -----------------------------------------------------------
 
@@ -501,6 +514,7 @@ def build_sigma_table(evaluation: dict) -> str:
     return rows
 
 
+
 def build_dashboard(df, agg, suspicious_windows, threats, feat_deviation, out_path, evaluation=None):
     logger.info("Building dashboard...")
 
@@ -511,15 +525,14 @@ def build_dashboard(df, agg, suspicious_windows, threats, feat_deviation, out_pa
     fig1, fig2, fig3, fig4, fig5, fig6, fig7, fig8, fig9, fig10 = build_charts(
         df, agg, suspicious_windows, feat_deviation, threats
     )
-    fig_attack = build_attack_matrix(df)
-
-    seq_result = detect_sequences(df)
-    fig_sankey = build_chain_sankey(seq_result.get("transitions"))
+    fig_attack  = build_attack_matrix(df)
+    seq_result  = detect_sequences(df)
+    fig_sankey  = build_chain_sankey(seq_result.get("transitions"))
     fig_patterns = build_pattern_summary(seq_result.get("patterns"))
 
     fig_eval_pr = build_eval_pr_chart(evaluation or {})
     fig_eval_cm = build_eval_confusion(evaluation or {})
-    sigma_rows = build_sigma_table(evaluation or {})
+    sigma_rows  = build_sigma_table(evaluation or {})
 
     window_rows = build_window_table(suspicious_windows)
     event_rows  = build_event_table(threats)
@@ -536,8 +549,8 @@ def build_dashboard(df, agg, suspicious_windows, threats, feat_deviation, out_pa
 
     no_data = lambda col: (
         f'<tr><td colspan="{col}" '
-        f'style="text-align:center;color:{C_MUTED};padding:20px;font-style:italic">'
-        f'No anomalies detected</td></tr>'
+        f'style="text-align:center;color:{C_MUTED};padding:24px;font-style:italic;font-size:11px">'
+        f'No data detected</td></tr>'
     )
 
     html = f"""<!DOCTYPE html>
@@ -545,160 +558,463 @@ def build_dashboard(df, agg, suspicious_windows, threats, feat_deviation, out_pa
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Windows Endpoint Behavioral Analysis</title>
+<title>Endpoint Behavioral Analysis – SOC Dashboard</title>
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet"/>
 <style>
-*{{box-sizing:border-box;margin:0;padding:0}}
-body{{background:{C_BG};color:{C_TEXT};font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5}}
-.topbar{{background:#010409;border-bottom:1px solid {C_BORD};padding:12px 28px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100}}
-.topbar h1{{font-size:14px;font-weight:700;color:#fff}}
-.badge{{background:{C_BORD};border-radius:4px;padding:2px 9px;font-size:11px;color:{C_MUTED}}}
-.dot-red{{width:8px;height:8px;border-radius:50%;background:{C_RED};display:inline-block;animation:pulse 1.5s infinite}}
-@keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:.3}}}}
-.main{{padding:24px 28px;max-width:1440px;margin:0 auto}}
-.kpi-row{{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:22px}}
-.kpi{{background:{C_CARD};border:1px solid {C_BORD};border-radius:8px;padding:18px 20px}}
-.kpi .lbl{{color:{C_MUTED};font-size:10px;text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px}}
-.kpi .val{{font-size:28px;font-weight:700}}
-.kpi .sub{{font-size:10px;color:{C_MUTED};margin-top:4px}}
-.card{{background:{C_CARD};border:1px solid {C_BORD};border-radius:8px;overflow:hidden;padding:4px}}
-.card-pad{{background:{C_CARD};border:1px solid {C_BORD};border-radius:8px;padding:18px 20px;overflow:auto}}
-.section-title{{font-size:11px;color:{C_MUTED};text-transform:uppercase;letter-spacing:.7px;margin-bottom:12px;font-weight:600}}
+:root {{
+  --bg:#0b0d11;--sur:#111620;--sur2:#171d28;--bord:#1f2a38;
+  --mg:#4d7a5e;--mgb:#62a87a;--mgd:#2d4a38;
+  --red:#c94040;--amb:#c9893a;--grn:#3fa066;--blu:#4a89c4;
+  --txt:#dde4ed;--mut:#7a8fa6;--dim:#3d4e61;
+  --r:8px;--t:140ms ease;
+}}
+*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
+html{{scroll-behavior:smooth}}
+body{{background:var(--bg);color:var(--txt);font-family:'Inter',system-ui,sans-serif;font-size:13px;line-height:1.6}}
+::-webkit-scrollbar{{width:5px;height:5px}}
+::-webkit-scrollbar-track{{background:transparent}}
+::-webkit-scrollbar-thumb{{background:var(--bord);border-radius:3px}}
+::-webkit-scrollbar-thumb:hover{{background:#2a3a4a}}
+*{{scrollbar-width:thin;scrollbar-color:var(--bord) transparent}}
+.topbar{{
+  background:rgba(7,9,13,.96);border-bottom:1px solid var(--bord);
+  padding:0 28px;height:54px;display:flex;align-items:center;gap:12px;
+  position:sticky;top:0;z-index:300;backdrop-filter:blur(16px);
+}}
+.t-brand{{display:flex;align-items:center;gap:10px}}
+.t-icon{{
+  width:30px;height:30px;border-radius:7px;
+  background:linear-gradient(135deg,#2d4a3820,#4d7a5e44);
+  border:1px solid #4d7a5e44;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}}
+.t-title{{font-size:13px;font-weight:700;color:#fff;letter-spacing:-.2px;font-family:'Inter',sans-serif}}
+.t-sub{{font-size:10px;color:var(--mut);font-family:'Inter',sans-serif}}
+.t-sep{{width:1px;height:22px;background:var(--bord);flex-shrink:0}}
+.live-badge{{
+  display:flex;align-items:center;gap:5px;
+  font-size:9px;font-weight:700;letter-spacing:.8px;color:var(--mgb);
+  background:var(--mgd);border:1px solid #4d7a5e44;
+  border-radius:20px;padding:3px 9px;flex-shrink:0;font-family:'Inter',sans-serif;
+}}
+.live-dot{{width:6px;height:6px;border-radius:50%;background:var(--mgb);animation:livepulse 1.6s ease-in-out infinite}}
+@keyframes livepulse{{
+  0%,100%{{opacity:1;transform:scale(1)}}
+  50%{{opacity:.4;transform:scale(.85)}}
+}}
+.chip{{background:var(--mgd);border:1px solid #4d7a5e44;border-radius:4px;padding:2px 8px;font-size:10px;color:var(--mgb);font-family:'Inter',sans-serif}}
+.t-time{{margin-left:auto;font-size:10px;color:var(--mut);font-family:'JetBrains Mono',monospace}}
+.nav{{
+  background:#080a0e;border-bottom:1px solid var(--bord);
+  padding:0 28px;display:flex;gap:0;
+  position:sticky;top:54px;z-index:200;overflow-x:auto;
+}}
+.nav::-webkit-scrollbar{{height:0}}
+.nav-a{{
+  display:flex;align-items:center;gap:6px;padding:10px 16px;
+  font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;
+  color:var(--mut);border-bottom:2px solid transparent;
+  cursor:pointer;text-decoration:none;
+  transition:color var(--t),border-color var(--t);white-space:nowrap;font-family:'Inter',sans-serif;
+}}
+.nav-a:hover{{color:var(--txt)}}
+.nav-a.active{{color:var(--mgb);border-bottom-color:var(--mg)}}
+.n-pill{{background:var(--red);color:#fff;border-radius:10px;padding:0 5px;font-size:9px;font-weight:700;min-width:16px;text-align:center;line-height:1.6}}
+.n-pill.ok{{background:var(--grn)}}
+.main{{padding:24px 28px;max-width:1600px;margin:0 auto}}
+.kpi-row{{display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:12px;margin-bottom:24px}}
+.kpi{{
+  background:var(--sur);border:1px solid var(--bord);
+  border-radius:var(--r);padding:18px 20px;
+  position:relative;overflow:hidden;transition:border-color var(--t),transform var(--t);
+}}
+.kpi:hover{{border-color:#2a3e52;transform:translateY(-1px)}}
+.kpi-bar{{position:absolute;top:0;left:0;right:0;height:2px;background:var(--mg)}}
+.kpi-lbl{{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--mut);margin-bottom:8px;font-family:'Inter',sans-serif}}
+.kpi-val{{font-size:26px;font-weight:700;line-height:1;letter-spacing:-1.5px;color:var(--mgb);font-family:'JetBrains Mono',monospace}}
+.kpi-sub{{font-size:10px;color:var(--mut);margin-top:6px;font-family:'Inter',sans-serif}}
+.kpi-alert{{
+  background:#0e1015;border:1px solid var(--bord);
+  border-radius:var(--r);padding:18px 20px;
+  position:relative;overflow:hidden;transition:border-color var(--t),transform var(--t);
+}}
+.kpi-alert:hover{{transform:translateY(-1px)}}
+.kpi-alert .kpi-bar{{background:var(--red)}}
+.kpi-alert .kpi-val{{font-size:34px;color:var(--red);font-family:'JetBrains Mono',monospace}}
+.kpi-alert .kpi-lbl{{font-family:'Inter',sans-serif}}
+.kpi-alert .kpi-sub{{font-family:'Inter',sans-serif}}
+.kpi-alert.armed{{border-color:#c9404044;box-shadow:0 0 24px #c9404012}}
+.kalert-badge{{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:8px;font-weight:700;letter-spacing:.8px;
+  color:var(--red);background:#c9404015;border:1px solid #c9404033;
+  border-radius:20px;padding:2px 7px;margin-top:8px;font-family:'Inter',sans-serif;
+}}
+.pulse-ring{{width:6px;height:6px;border-radius:50%;background:var(--red);animation:livepulse 1.2s ease-in-out infinite}}
+.s-head{{
+  display:flex;align-items:center;gap:10px;
+  margin-bottom:14px;padding-bottom:11px;border-bottom:1px solid #1f2a3866;
+}}
+.s-icon{{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}}
+.ic-mg{{background:#4d7a5e26;border:1px solid #4d7a5e30}}
+.ic-re{{background:#c9404026;border:1px solid #c9404030}}
+.ic-bl{{background:#4a89c426;border:1px solid #4a89c430}}
+.ic-am{{background:#c9893a26;border:1px solid #c9893a30}}
+.s-title{{font-size:12px;font-weight:700;color:var(--txt);letter-spacing:.2px;font-family:'Inter',sans-serif}}
+.s-meta{{font-size:10px;color:var(--mut);margin-left:auto;font-family:'Inter',sans-serif}}
+.card{{background:var(--sur);border:1px solid var(--bord);border-radius:var(--r);overflow:hidden;padding:4px;transition:border-color var(--t)}}
+.card:hover{{border-color:#2a3e52}}
+.card-p{{background:var(--sur);border:1px solid var(--bord);border-radius:var(--r);padding:18px 20px;overflow:auto}}
 .g1{{margin-bottom:14px}}
 .g2{{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}}
 .g3{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px}}
+.mb{{margin-bottom:14px}}
+.section{{margin-bottom:36px;scroll-margin-top:112px}}
+.toolbar{{display:flex;align-items:center;gap:10px;margin-bottom:12px}}
+.sw{{position:relative;display:inline-block}}
+.sw::before{{content:'⌕';position:absolute;left:10px;top:50%;transform:translateY(-52%);font-size:14px;color:var(--mut);pointer-events:none}}
+.si{{
+  background:#080a0e;border:1px solid var(--bord);
+  border-radius:6px;padding:6px 12px 6px 30px;
+  color:var(--txt);font-family:'JetBrains Mono',monospace;font-size:11px;
+  width:240px;outline:none;transition:border-color var(--t),box-shadow var(--t);
+}}
+.si::placeholder{{color:var(--mut)}}
+.si:focus{{border-color:#4a89c466;box-shadow:0 0 0 2px #4a89c415}}
+.rc{{font-size:10px;color:var(--mut);margin-left:auto;font-family:'JetBrains Mono',monospace}}
 table{{width:100%;border-collapse:collapse;font-size:12px;table-layout:auto}}
-thead tr{{background:#161b22;position:sticky;top:0;z-index:2}}
-th{{padding:10px 12px;text-align:left;color:{C_MUTED};font-size:10px;text-transform:uppercase;
-    letter-spacing:.6px;font-weight:700;border-bottom:2px solid {C_BORD};white-space:nowrap}}
-td{{padding:9px 12px;border-bottom:1px solid {C_BORD}22;vertical-align:top}}
-tr:hover td{{background:#1c2128}}
-.card-pad table{{overflow-x:auto;display:block;max-height:520px;overflow-y:auto}}
-.footer{{text-align:center;color:{C_MUTED};font-size:10px;padding:24px;border-top:1px solid {C_BORD};margin-top:22px}}
+thead tr{{background:#080a0d;position:sticky;top:0;z-index:2;box-shadow:0 1px 0 var(--bord)}}
+th{{padding:9px 12px;text-align:left;color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:.8px;font-weight:700;white-space:nowrap;font-family:'Inter',sans-serif}}
+td{{padding:9px 12px;border-bottom:1px solid #1f2a3818;vertical-align:top}}
+tr:hover td{{background:var(--sur2)}}
+tr.xhide{{display:none}}
+.card-p table{{overflow-x:auto;display:block;max-height:560px;overflow-y:auto}}
+#tb-alerts td:nth-child(1),#tb-alerts td:nth-child(2),
+#tb-alerts td:nth-child(4),#tb-alerts td:nth-child(5){{font-family:'JetBrains Mono',monospace}}
+.log-panel{{background:#070910;border:1px solid var(--bord);border-radius:var(--r);overflow:hidden;position:relative}}
+.log-panel::after{{
+  content:'';position:absolute;inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.12) 3px,rgba(0,0,0,.12) 4px);
+  pointer-events:none;z-index:1;
+}}
+.log-hdr{{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 16px;background:#04060a;
+  border-bottom:1px solid var(--bord);position:relative;z-index:2;
+}}
+.log-toolbar{{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 16px;background:#04060a;
+  border-bottom:1px solid var(--bord);position:relative;z-index:2;
+}}
+.log-title{{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:var(--mgb);letter-spacing:.5px}}
+.log-live{{margin-left:auto;display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;color:var(--grn);letter-spacing:.5px}}
+.log-body{{overflow:auto;max-height:560px;position:relative;z-index:2}}
+.log-body *{{font-family:'JetBrains Mono',monospace!important}}
+.log-body table{{width:100%;border-collapse:collapse;font-size:12px}}
+.log-body thead tr{{background:#020407;position:sticky;top:0;z-index:3;box-shadow:0 1px 0 var(--bord)}}
+.log-body th{{padding:9px 12px;color:var(--dim);font-size:9px;text-transform:uppercase;letter-spacing:.8px;font-weight:700;white-space:nowrap}}
+.log-body td{{padding:8px 12px;border-bottom:1px solid #1f2a3818;vertical-align:top}}
+.log-body tr:hover td{{background:#0e1015}}
+.crt-footer{{padding:6px 16px;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--dim);letter-spacing:.5px;background:#04060a;border-top:1px solid var(--bord);position:relative;z-index:2}}
+.footer{{text-align:center;color:var(--mut);font-size:10px;padding:20px;border-top:1px solid var(--bord);margin-top:24px;letter-spacing:.3px;font-family:'Inter',sans-serif}}
+@media(max-width:900px){{
+  .kpi-row{{grid-template-columns:1fr 1fr 1fr}}
+  .g3{{grid-template-columns:1fr 1fr}}
+}}
+@media(max-width:600px){{
+  .kpi-row{{grid-template-columns:1fr 1fr}}
+  .g2,.g3{{grid-template-columns:1fr}}
+}}
 </style>
 </head>
 <body>
+
 <div class="topbar">
-  <div class="dot-red"></div>
-  <h1>Windows Endpoint Behavioral Analysis</h1>
-  <span class="badge">Behavioral Features</span>
-  <span class="badge">Isolation Forest</span>
-  <span class="badge">5-min Windows</span>
-  <span class="badge">Channel-Aware</span>
-  <span class="badge" style="margin-left:auto">{generated_at}</span>
+  <div class="t-brand">
+    <div class="t-icon">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#62a87a" stroke-width="1.5">
+        <path d="M8 2L3 5v4c0 3 2.5 5 5 5s5-2 5-5V5L8 2z"/>
+      </svg>
+    </div>
+    <div>
+      <div class="t-title">Endpoint Behavioral Analysis</div>
+      <div class="t-sub">Windows EDR · Isolation Forest · Sigma Rules</div>
+    </div>
+  </div>
+  <div class="t-sep"></div>
+  <div class="live-badge"><div class="live-dot"></div>ACTIVE</div>
+  <span class="chip">5-min Windows</span>
+  <span class="chip">Channel-Aware</span>
+  <span class="chip">MITRE ATT&amp;CK</span>
+  <span class="t-time">{generated_at}</span>
 </div>
+
+<nav class="nav">
+  <a class="nav-a active" href="#s-overview" onclick="goTo(this,'s-overview')">
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+    Overview
+  </a>
+  <a class="nav-a" href="#s-timeline" onclick="goTo(this,'s-timeline')">
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1,12 5,7 9,9 15,3"/></svg>
+    Timeline
+  </a>
+  <a class="nav-a" href="#s-alerts" onclick="goTo(this,'s-alerts')">
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2L1 14h14L8 2z"/><line x1="8" y1="7" x2="8" y2="10"/><circle cx="8" cy="12.5" r=".5" fill="currentColor"/></svg>
+    Alert Windows <span class="n-pill{' ok' if kpi_anomalous_win == 0 else ''}">{kpi_anomalous_win}</span>
+  </a>
+  <a class="nav-a" href="#s-events" onclick="goTo(this,'s-events')">
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="2,4 6,8 2,12"/><line x1="8" y1="12" x2="14" y2="12"/></svg>
+    Log Stream <span class="n-pill{' ok' if kpi_threat_events == 0 else ''}">{kpi_threat_events}</span>
+  </a>
+  <a class="nav-a" href="#s-eval" onclick="goTo(this,'s-eval')">
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><polyline points="5,8 7,10 11,6"/></svg>
+    Evaluation
+  </a>
+</nav>
+
 <div class="main">
 
   <div class="kpi-row">
-    <div class="kpi">
-      <div class="lbl">Total Events</div>
-      <div class="val" style="color:{C_BLUE}">{kpi_total_events:,}</div>
-      <div class="sub">Raw log rows</div>
+    <div class="kpi-alert{' armed' if kpi_anomalous_win > 0 else ''}">
+      <div class="kpi-bar"></div>
+      <div class="kpi-lbl">Anomalous Windows</div>
+      <div class="kpi-val">{kpi_anomalous_win}</div>
+      <div class="kpi-sub">ML-flagged 5-min windows</div>
+      <div class="kalert-badge"><div class="pulse-ring"></div>ACTIVE THREATS</div>
+    </div>
+    <div class="kpi-alert{' armed' if kpi_threat_events > 0 else ''}">
+      <div class="kpi-bar"></div>
+      <div class="kpi-lbl">Threat Events</div>
+      <div class="kpi-val">{kpi_threat_events:,}</div>
+      <div class="kpi-sub">Events in suspicious windows</div>
+      <div class="kalert-badge"><div class="pulse-ring"></div>ACTIVE THREATS</div>
     </div>
     <div class="kpi">
-      <div class="lbl">Hosts</div>
-      <div class="val" style="color:{C_BLUE}">{kpi_total_hosts:,}</div>
-      <div class="sub">Unique endpoints</div>
+      <div class="kpi-bar"></div>
+      <div class="kpi-lbl">Total Events</div>
+      <div class="kpi-val">{kpi_total_events:,}</div>
+      <div class="kpi-sub">Raw log entries ingested</div>
     </div>
     <div class="kpi">
-      <div class="lbl">Channels</div>
-      <div class="val" style="color:{C_PURPLE}">{kpi_total_channels:,}</div>
-      <div class="sub">Log sources</div>
+      <div class="kpi-bar"></div>
+      <div class="kpi-lbl">Monitored Hosts</div>
+      <div class="kpi-val">{kpi_total_hosts:,}</div>
+      <div class="kpi-sub">Unique endpoints</div>
     </div>
     <div class="kpi">
-      <div class="lbl">Anomalous Windows</div>
-      <div class="val" style="color:{kc(kpi_anomalous_win)}">{kpi_anomalous_win}</div>
-      <div class="sub">ML-flagged windows</div>
-    </div>
-    <div class="kpi">
-      <div class="lbl">Threat Events</div>
-      <div class="val" style="color:{kc(kpi_threat_events)}">{kpi_threat_events:,}</div>
-      <div class="sub">In suspicious windows</div>
+      <div class="kpi-bar"></div>
+      <div class="kpi-lbl">Log Channels</div>
+      <div class="kpi-val">{kpi_total_channels:,}</div>
+      <div class="kpi-sub">Source channel types</div>
     </div>
   </div>
 
-  <div class="card g1">{_div(fig_attack)}</div>
-
-  <div class="g2">
-    <div class="card">{_div(fig9)}</div>
-    <div class="card">{_div(fig10)}</div>
-  </div>
-
-  <div class="g2">
-    <div class="card">{_div(fig_sankey)}</div>
-    <div class="card">{_div(fig_patterns)}</div>
-  </div>
-
-  <div class="card g1">{_div(fig1)}</div>
-
-  <div class="g2">
-    <div class="card">{_div(fig2)}</div>
-    <div class="card">{_div(fig8)}</div>
-  </div>
-
-  <div class="g3">
-    <div class="card">{_div(fig3)}</div>
-    <div class="card">{_div(fig4)}</div>
-    <div class="card">{_div(fig5)}</div>
-  </div>
-
-  <div class="g2">
-    <div class="card">{_div(fig6)}</div>
-    <div class="card">{_div(fig7)}</div>
-  </div>
-
-  <div class="card-pad g1">
-    <div class="section-title">Evaluation Metrics – Sigma vs ML Comparison</div>
+  <div class="section" id="s-overview">
+    <div class="s-head">
+      <div class="s-icon ic-mg">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#62a87a" stroke-width="1.5"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+      </div>
+      <span class="s-title">MITRE ATT&amp;CK Coverage Matrix</span>
+      <span class="s-meta">Technique activity heatmap across all channels</span>
+    </div>
+    <div class="card g1">{_div(fig_attack)}</div>
     <div class="g2">
-      <div class="card">{_div(fig_eval_pr)}</div>
-      <div class="card">{_div(fig_eval_cm)}</div>
+      <div class="card">{_div(fig9)}</div>
+      <div class="card">{_div(fig10)}</div>
     </div>
-    <table>
-      <thead><tr><th>Metric</th><th>Value</th></tr></thead>
-      <tbody>{sigma_rows}</tbody>
-    </table>
+    <div class="s-head" style="margin-top:20px">
+      <div class="s-icon ic-bl">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#4a89c4" stroke-width="1.5"><polyline points="1,12 5,7 9,9 15,3"/><line x1="1" y1="14" x2="15" y2="14"/></svg>
+      </div>
+      <span class="s-title">Attack Chain Analysis</span>
+      <span class="s-meta">Tactic transitions · known pattern sequences</span>
+    </div>
+    <div class="g2">
+      <div class="card">{_div(fig_sankey)}</div>
+      <div class="card">{_div(fig_patterns)}</div>
+    </div>
   </div>
 
-  <div class="card-pad g1">
-    <div class="section-title">Top Suspicious Behavioral Windows</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Time Window</th>
-          <th>Host</th>
-          <th>Severity</th>
-          <th>Score</th>
-          <th>Anomaly Score</th>
-          <th>Top Reasons</th>
-        </tr>
-      </thead>
-      <tbody>{window_rows or no_data(6)}</tbody>
-    </table>
+  <div class="section" id="s-timeline">
+    <div class="s-head">
+      <div class="s-icon ic-bl">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#4a89c4" stroke-width="1.5"><polyline points="1,12 5,7 9,9 15,3"/></svg>
+      </div>
+      <span class="s-title">Threat Timeline &amp; Behavioral Signals</span>
+      <span class="s-meta">Temporal anomaly distribution across 5-min windows</span>
+    </div>
+    <div class="card g1">{_div(fig1)}</div>
+    <div class="g2">
+      <div class="card">{_div(fig2)}</div>
+      <div class="card">{_div(fig8)}</div>
+    </div>
+    <div class="g3">
+      <div class="card">{_div(fig3)}</div>
+      <div class="card">{_div(fig4)}</div>
+      <div class="card">{_div(fig5)}</div>
+    </div>
+    <div class="g2">
+      <div class="card">{_div(fig6)}</div>
+      <div class="card">{_div(fig7)}</div>
+    </div>
   </div>
 
-  <div class="card-pad">
-    <div class="section-title">Top Events in Suspicious Windows (Channel + MITRE)</div>
-    <table style="border-collapse:collapse">
-      <thead>
-        <tr>
-            <th style="min-width:130px">Timestamp / Host</th>
-            <th style="min-width:90px">Channel / Type</th>
-            <th style="min-width:80px">Event</th>
-            <th style="min-width:140px">Executable</th>
-            <th style="min-width:120px">Parent</th>
-            <th style="min-width:180px">Context (Cmd / Net / DNS)</th>
-            <th style="min-width:180px">Process Access Detail</th>
-            <th style="min-width:160px">MITRE Tags</th>
-        </tr>
-      </thead>
-      <tbody>{event_rows or no_data(8)}</tbody>
-    </table>
+  <div class="section" id="s-alerts">
+    <div class="s-head">
+      <div class="s-icon ic-re">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#c94040" stroke-width="1.5"><path d="M8 2L1 14h14L8 2z"/><line x1="8" y1="7" x2="8" y2="10"/><circle cx="8" cy="12.5" r=".5" fill="#c94040"/></svg>
+      </div>
+      <span class="s-title">Suspicious Behavioral Windows</span>
+      <span class="s-meta">Sorted by severity score · top 15 shown</span>
+    </div>
+    <div class="card-p">
+      <div class="toolbar">
+        <div class="sw">
+          <input class="si" id="fi-alerts" type="text"
+            placeholder="Filter by host, severity, reason…"
+            oninput="ft(this,'tb-alerts','rc-alerts')"/>
+        </div>
+        <span class="rc" id="rc-alerts"></span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Time Window</th><th>Host</th><th>Severity</th>
+            <th>Score</th><th>Anomaly Score</th><th>Top Reasons</th>
+          </tr>
+        </thead>
+        <tbody id="tb-alerts">{window_rows or no_data(6)}</tbody>
+      </table>
+    </div>
   </div>
+
+  <div class="section" id="s-events">
+    <div class="s-head">
+      <div class="s-icon ic-bl">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#4a89c4" stroke-width="1.5"><polyline points="2,4 6,8 2,12"/><line x1="8" y1="12" x2="14" y2="12"/></svg>
+      </div>
+      <span class="s-title">Events in Suspicious Windows</span>
+      <span class="s-meta">Channel-tagged · MITRE-labeled · top 25 shown</span>
+    </div>
+    <div class="log-panel">
+      <div class="log-hdr">
+        <div style="display:flex;gap:4px">
+          <div style="width:7px;height:7px;border-radius:50%;background:#c94040"></div>
+          <div style="width:7px;height:7px;border-radius:50%;background:#c9893a"></div>
+          <div style="width:7px;height:7px;border-radius:50%;background:#3fa066"></div>
+        </div>
+        <span class="log-title">ENDPOINT_EVENT_STREAM — SHIRE.COM</span>
+        <div class="log-live">&#9679; LIVE</div>
+      </div>
+      <div class="log-toolbar">
+        <div class="sw">
+          <input class="si" id="fi-events" type="text"
+            placeholder="Filter by host, process, MITRE tag…"
+            oninput="ft(this,'tb-events','rc-events')"/>
+        </div>
+        <span class="rc" id="rc-events"></span>
+      </div>
+      <div class="log-body">
+        <table style="border-collapse:collapse">
+          <thead>
+            <tr>
+              <th style="min-width:130px">Timestamp / Host</th>
+              <th style="min-width:90px">Channel / Type</th>
+              <th style="min-width:80px">Event</th>
+              <th style="min-width:140px">Executable</th>
+              <th style="min-width:120px">Parent</th>
+              <th style="min-width:180px">Context (Cmd / Net / DNS)</th>
+              <th style="min-width:180px">Process Access Detail</th>
+              <th style="min-width:160px">MITRE Tags</th>
+            </tr>
+          </thead>
+          <tbody id="tb-events">{event_rows or no_data(8)}</tbody>
+        </table>
+      </div>
+      <div class="crt-footer">// CRT TERMINAL MODE — RAW FORENSIC EVENT STREAM</div>
+    </div>
+  </div>
+
+  <div class="section" id="s-eval">
+    <div class="s-head">
+      <div class="s-icon ic-mg">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#62a87a" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><polyline points="5,8 7,10 11,6"/></svg>
+      </div>
+      <span class="s-title">ML vs Sigma Evaluation</span>
+      <span class="s-meta">Window-level precision / recall / F1 comparison</span>
+    </div>
+    <div class="card-p">
+      <div class="g2 mb">
+        <div class="card">{_div(fig_eval_pr)}</div>
+        <div class="card">{_div(fig_eval_cm)}</div>
+      </div>
+      <table>
+        <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+        <tbody>{sigma_rows}</tbody>
+      </table>
+    </div>
+  </div>
+
 </div>
+
 <div class="footer">
-  Windows Endpoint Behavioral Analysis | Isolation Forest | 5-min Time-Window Aggregation | Channel-Aware | {generated_at}
+  ◈ Windows Endpoint Behavioral Analysis &nbsp;·&nbsp;
+  Isolation Forest + Sigma Rules &nbsp;·&nbsp;
+  5-min Time-Window Aggregation &nbsp;·&nbsp;
+  {generated_at}
 </div>
+
+<script>
+function goTo(el, id) {{
+  event.preventDefault();
+  document.querySelectorAll('.nav-a').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  const sec = document.getElementById(id);
+  if (sec) {{
+    window.scrollTo({{ top: sec.getBoundingClientRect().top + scrollY - (54+42+16), behavior:'smooth' }});
+  }}
+}}
+function ft(input, tbId, rcId) {{
+  const tb = document.getElementById(tbId);
+  const rc = document.getElementById(rcId);
+  if (!tb) return;
+  const q = input.value.toLowerCase().trim();
+  let n = 0, total = 0;
+  tb.querySelectorAll('tr').forEach(tr => {{
+    total++;
+    const show = !q || tr.textContent.toLowerCase().includes(q);
+    tr.classList.toggle('xhide', !show);
+    if (show) n++;
+  }});
+  if (rc) rc.textContent = q ? n + ' / ' + total + ' rows' : total + ' rows';
+}}
+function styleAlertRows() {{
+  const tb = document.getElementById('tb-alerts');
+  if (!tb) return;
+  tb.querySelectorAll('tr').forEach(tr => {{
+    const cells = tr.querySelectorAll('td');
+    if (cells.length < 3) return;
+    const sev = cells[2].textContent.toLowerCase().trim();
+    if (sev === 'high' || sev === 'critical') {{
+      tr.style.borderLeft = '3px solid var(--red)';
+    }} else if (sev === 'medium') {{
+      tr.style.borderLeft = '3px solid var(--amb)';
+    }} else {{
+      tr.style.borderLeft = '3px solid var(--mgb)';
+    }}
+  }});
+}}
+document.addEventListener('DOMContentLoaded', () => {{
+  [['tb-alerts','rc-alerts'],['tb-events','rc-events']].forEach(([tbId, rcId]) => {{
+    const tb = document.getElementById(tbId);
+    const rc = document.getElementById(rcId);
+    if (tb && rc) rc.textContent = tb.querySelectorAll('tr').length + ' rows';
+  }});
+  styleAlertRows();
+}});
+</script>
 </body>
 </html>"""
 
