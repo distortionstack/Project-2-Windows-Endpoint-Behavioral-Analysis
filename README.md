@@ -1,9 +1,9 @@
 # Vetala
 ## Windows Endpoint Behavioral Analysis
 
-<div style="display: flex; justify-content: center; align-items: center; height: 100vh;">
+<p align="center">
   <img width="367" height="604" alt="image" src="https://github.com/user-attachments/assets/c8cae993-f75f-4262-947c-5945ba87f0d4" />
-</div>
+</p>
 
 Behavioral-based Windows endpoint threat detection pipeline combining Isolation Forest (unsupervised) and LightGBM (supervised) ML with MITRE ATT&CK mapping, Sigma rule correlation, and interactive dashboards.
 
